@@ -21,42 +21,6 @@ func (z Zone) String() string {
 	return "Zone[" + strconv.Itoa(z.ID) + "](O:" + strconv.Itoa(z.Owner) + " V:" + strconv.Itoa(z.Platinum) + " C:" + strconv.Itoa(z.Continent) + " PODS:" + strconv.Itoa(z.PODS[0]) + "," + strconv.Itoa(z.PODS[1]) + "," + strconv.Itoa(z.PODS[2]) + "," + strconv.Itoa(z.PODS[3]) + ")"
 }
 
-func (z Zone) UnclaimedNeighbors() []*Zone {
-	var retVal []*Zone
-
-	for _, neighbor := range z.Neighbors {
-		if neighbor.Owner == -1 {
-			retVal = append(retVal, neighbor)
-		}
-	}
-
-	return retVal
-}
-
-func (z Zone) OwnedNeighbors(owner int) []*Zone {
-	var retVal []*Zone
-	for _, neighbor := range z.Neighbors {
-		if neighbor.Owner == owner {
-			retVal = append(retVal, neighbor)
-		}
-	}
-	return retVal
-}
-
-func (z Zone) DefeatableNeighbors(player int) []*Zone {
-	var retVal []*Zone
-
-	for _, neighbor := range z.Neighbors {
-		if neighbor.Owner != -1 && neighbor.Owner != player {
-			if z.PODS[player] > neighbor.PODS[neighbor.Owner] {
-				retVal = append(retVal, neighbor)
-			}
-		}
-	}
-
-	return retVal
-}
-
 func (z Zone) IsSpawnable(player int) bool {
 	return z.Owner == -1 || z.Owner == player
 }
@@ -96,9 +60,8 @@ func (r RandomZone) Spawnable(player int) *Zone {
 }
 
 type Continent struct {
-	ID            int
-	Zones         []*Zone
-	PlatinumZones []*Zone
+	ID    int
+	Zones []*Zone
 }
 
 func (c Continent) Size() int {
@@ -164,9 +127,6 @@ func (w *World) CalculateContinents() {
 	// Fill Continents
 	for i := 0; i < len(w.Zones); i++ {
 		w.Continents[w.Zones[i].Continent].Zones = append(w.Continents[w.Zones[i].Continent].Zones, w.Zones[i])
-		if w.Zones[i].Platinum > 0 {
-			w.Continents[w.Zones[i].Continent].PlatinumZones = append(w.Continents[w.Zones[i].Continent].PlatinumZones, w.Zones[i])
-		}
 	}
 }
 
