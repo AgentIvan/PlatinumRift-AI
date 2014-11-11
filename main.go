@@ -252,6 +252,8 @@ func main() {
 
 	// Handle Steps
 	for {
+		start := time.Now()
+
 		fmt.Scan(&world.Platinum)
 
 		var myUnits []*Zone
@@ -299,5 +301,7 @@ func main() {
 
 		world.SpawnRandom()
 		world.Step()
+
+		log.Println("Time:", time.Now().Sub(start))
 	}
 }
