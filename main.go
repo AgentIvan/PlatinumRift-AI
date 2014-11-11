@@ -1,0 +1,393 @@
+package main
+
+import "fmt"
+import "math/rand"
+import "os"
+import "strconv"
+import "time"
+import "log"
+
+type Zone struct {
+	ID       int
+	Owner    int
+	PODS     [4]int
+	Platinum int
+
+	Continent int
+	Neighbors []*Zone
+}
+
+func (z Zone) String() string {
+	return "Zone[" + strconv.Itoa(z.ID) + "](O:" + strconv.Itoa(z.Owner) + " V:" + strconv.Itoa(z.Platinum) + " C:" + strconv.Itoa(z.Continent) + " PODS:" + strconv.Itoa(z.PODS[0]) + "," + strconv.Itoa(z.PODS[1]) + "," + strconv.Itoa(z.PODS[2]) + "," + strconv.Itoa(z.PODS[3]) + ")"
+}
+
+func (z Zone) UnclaimedNeighbors() []*Zone {
+	var retVal []*Zone
+
+	for _, neighbor := range z.Neighbors {
+		if neighbor.Owner == -1 {
+			retVal = append(retVal, neighbor)
+		}
+	}
+
+	return retVal
+}
+
+func (z Zone) OwnedNeighbors(owner int) []*Zone {
+	var retVal []*Zone
+	for _, neighbor := range z.Neighbors {
+		if neighbor.Owner == owner {
+			retVal = append(retVal, neighbor)
+		}
+	}
+	return retVal
+}
+
+func (z Zone) DefeatableNeighbors(player int) []*Zone {
+	var retVal []*Zone
+
+	for _, neighbor := range z.Neighbors {
+		if neighbor.Owner != -1 && neighbor.Owner != player {
+			if z.PODS[player] > neighbor.PODS[neighbor.Owner] {
+				retVal = append(retVal, neighbor)
+			}
+		}
+	}
+
+	return retVal
+}
+
+func (z Zone) IsSpawnable(player int) bool {
+	return z.Owner == -1 || z.Owner == player
+}
+
+type RandomZone []*Zone
+
+func (r RandomZone) PlayerPOD(player int) *Zone {
+	owned := []*Zone{}
+	for _, node := range r {
+		if node.PODS[player] > 0 {
+			owned = append(owned, node)
+		}
+	}
+	return owned[int(rand.Int31n(int32(len(owned))))]
+}
+
+func (r RandomZone) EnemyPOD(player int) *Zone {
+	owned := []*Zone{}
+	for _, node := range r {
+		for i := 0; i < 4; i++ {
+			if i != player && node.PODS[i] > 0 {
+				owned = append(owned, node)
+			}
+		}
+	}
+	return owned[int(rand.Int31n(int32(len(owned))))]
+}
+
+func (r RandomZone) Spawnable(player int) *Zone {
+	spawnable := []*Zone{}
+	for _, node := range r {
+		if node.Owner == -1 || node.Owner == player {
+			spawnable = append(spawnable, node)
+		}
+	}
+	return spawnable[int(rand.Int31n(int32(len(spawnable))))]
+}
+
+type Continent struct {
+	ID            int
+	Zones         []*Zone
+	PlatinumZones []*Zone
+}
+
+func (c Continent) Size() int {
+	return len(c.Zones)
+}
+
+type World struct {
+	Zones      []*Zone
+	Continents []*Continent
+
+	RoundNumber  int
+	MoveMessage  string
+	SpawnMessage string
+}
+
+func (w *World) AddMove(number, start, end int) {
+	if w.MoveMessage == "WAIT" {
+		w.MoveMessage = ""
+	}
+	w.MoveMessage += strconv.Itoa(number) + " " + strconv.Itoa(start) + " " + strconv.Itoa(end) + " "
+}
+
+func (w *World) AddSpawn(number, position int) {
+	if w.SpawnMessage == "WAIT" {
+		w.SpawnMessage = ""
+	}
+
+	w.SpawnMessage += strconv.Itoa(number) + " " + strconv.Itoa(position) + " "
+}
+
+func (w *World) Step() {
+	w.RoundNumber++
+
+	fmt.Println(w.MoveMessage)
+	fmt.Println(w.SpawnMessage)
+
+	w.MoveMessage = "WAIT"
+	w.SpawnMessage = "WAIT"
+}
+
+func (w *World) CalculateContinents() {
+	continent := 0
+	visited := make([]bool, len(w.Zones))
+	for i := 0; i < len(visited); i++ {
+		if !visited[i] {
+			w.SetContinentBFS(continent, w.Zones[i], visited)
+			continent++
+		}
+	}
+
+	// Setup Continents
+	for i := 0; i < continent; i++ {
+		w.Continents = append(w.Continents, &Continent{ID: i})
+	}
+
+	// Fill Continents
+	for i := 0; i < len(w.Zones); i++ {
+		w.Continents[w.Zones[i].Continent].Zones = append(w.Continents[w.Zones[i].Continent].Zones, w.Zones[i])
+		if w.Zones[i].Platinum > 0 {
+			w.Continents[w.Zones[i].Continent].PlatinumZones = append(w.Continents[w.Zones[i].Continent].PlatinumZones, w.Zones[i])
+		}
+	}
+}
+
+func (w *World) SetContinentBFS(continent int, zone *Zone, visited []bool) {
+	if visited[zone.ID] {
+		return
+	}
+	visited[zone.ID] = true
+
+	zone.Continent = continent
+	for _, neighbor := range zone.Neighbors {
+		w.SetContinentBFS(continent, neighbor, visited)
+	}
+}
+
+func (w World) Path(start Zone, endTest func(*Zone) bool) []int {
+	distance := make(map[int]int)
+	previous := make(map[int]int)
+	nodes := make(map[int]*Zone)
+
+	path := func(target *Zone, previous map[int]int) []int {
+		path := []int{}
+		if target != nil {
+			u := target.ID
+			for {
+				if previous[u] == -1 {
+					break
+				}
+
+				path = append([]int{u}, path...)
+				u = previous[u]
+			}
+		}
+		return path
+	}
+
+	for _, node := range w.Continents[start.Continent].Zones {
+		distance[node.ID] = len(w.Continents[start.Continent].Zones)
+		previous[node.ID] = -1
+		nodes[node.ID] = node
+	}
+	distance[start.ID] = 0
+
+	for len(nodes) > 0 {
+		//log.Println(len(nodes), "\n")
+		smallest_id, smallest_dist := -1, 9999
+		for _, node := range nodes {
+			if distance[node.ID] < smallest_dist {
+				smallest_id = node.ID
+				smallest_dist = distance[node.ID]
+			}
+		}
+		//log.Println(smallest_id, smallest_dist, "\n")
+
+		currentNode := nodes[smallest_id]
+		delete(nodes, currentNode.ID)
+
+		if endTest(currentNode) {
+			return path(currentNode, previous)
+		}
+
+		/*if currentNode.Platinum > 0 && currentNode.Owner != start.Owner {
+		      log.Println("Platinum Target:", currentNode, "\n")
+		      return path(currentNode, previous)
+		  }
+
+		  for i := 0; i < 4 && i != start.Owner; i++ {
+		      if currentNode.PODS[start.Owner] > currentNode.PODS[i] {
+		          log.Println("Enemy Target:", currentNode, "\n")
+		          return path(currentNode, previous)
+		      }
+		  }*/
+
+		for _, neighbor := range currentNode.Neighbors {
+			alt := distance[currentNode.ID]
+
+			// Favor enemy zones over unclaimed over owned
+			if neighbor.Owner != start.Owner {
+				if neighbor.Owner != -1 {
+					alt += 1
+				} else {
+					alt += 2
+				}
+			} else {
+				alt += 3
+			}
+
+			//log.Println(neighbor.ID, alt, distance[neighbor.ID], "\n")
+			if alt < distance[neighbor.ID] {
+				distance[neighbor.ID] = alt
+				previous[neighbor.ID] = currentNode.ID
+			}
+		}
+	}
+
+	//log.Println(distance, "\n", previous, "\n")
+
+	return []int{}
+}
+
+func SpawnRandom(spawns, player int, world *World) {
+	for i := 0; i < spawns; i++ {
+		zone := RandomZone(world.Zones).Spawnable(player)
+		world.AddSpawn(1, zone.ID)
+	}
+}
+
+func (w *World) SpawnContestedRandom(spawns, player int) {
+	for i := 0; i < spawns; i++ {
+		zone := RandomZone(w.Zones).Spawnable(player)
+		w.AddSpawn(1, zone.ID)
+	}
+}
+
+func SpawnOneContinent(spawns, continent, player int, world *World) {
+	for i := 0; i < spawns; i++ {
+		zone := RandomZone(world.Continents[continent].Zones).Spawnable(player)
+		world.AddSpawn(1, zone.ID)
+	}
+}
+
+func main() {
+	log.SetOutput(os.Stderr)
+	log.SetFlags(log.Ltime | log.Lshortfile)
+
+	var playerCount, myId, zoneCount, linkCount int
+	fmt.Scan(&playerCount, &myId, &zoneCount, &linkCount)
+
+	rand.Seed(time.Now().Unix() * int64(myId))
+
+	// Setup World
+	world := World{MoveMessage: "WAIT", SpawnMessage: "WAIT"}
+	for i := 0; i < zoneCount; i++ {
+		var id, value int
+		fmt.Scan(&id, &value)
+
+		world.Zones = append(world.Zones, &Zone{ID: id, Continent: -1, Platinum: value})
+	}
+
+	for i := 0; i < linkCount; i++ {
+		var zone1, zone2 int
+		fmt.Scan(&zone1, &zone2)
+
+		world.Zones[zone1].Neighbors = append(world.Zones[zone1].Neighbors, world.Zones[zone2])
+		world.Zones[zone2].Neighbors = append(world.Zones[zone2].Neighbors, world.Zones[zone1])
+	}
+	world.CalculateContinents()
+
+	// Handle Steps
+	for {
+		var platinum int
+		fmt.Scan(&platinum)
+
+		var myUnits []*Zone
+		for i := 0; i < zoneCount; i++ {
+			var id, owner, podsP0, podsP1, podsP2, podsP3 int
+			fmt.Scan(&id, &owner, &podsP0, &podsP1, &podsP2, &podsP3)
+
+			world.Zones[id].Owner = owner
+			world.Zones[id].PODS = [4]int{podsP0, podsP1, podsP2, podsP3}
+
+			if world.Zones[id].PODS[myId] > 0 {
+				myUnits = append(myUnits, world.Zones[id])
+			}
+		}
+
+		// Movement
+		for _, zone := range myUnits {
+			path := world.Path(*zone, func(z *Zone) bool {
+				if z.Platinum > 0 && z.Owner != zone.Owner {
+					log.Println("PTarget:", z, "\n")
+					return true
+				}
+				return false
+			})
+
+			if len(path) > 0 {
+				world.AddMove(zone.PODS[myId], zone.ID, path[0])
+				zone.PODS[myId] -= zone.PODS[myId]
+			}
+
+			if zone.PODS[myId] > 0 {
+				path := world.Path(*zone, func(z *Zone) bool {
+					if z.Owner != myId {
+						log.Println("OTarget:", z, "\n")
+						return true
+					}
+					return false
+				})
+				if len(path) > 0 {
+					world.AddMove(zone.PODS[myId], zone.ID, path[0])
+					zone.PODS[myId] -= zone.PODS[myId]
+				}
+			}
+
+			/*for _, node := range zone.DefeatableNeighbors(myId) {
+			      enemy := node.PODS[node.Owner]
+			      if zone.PODS[myId] > enemy {
+			          world.AddMove(enemy + 1, zone.ID, node.ID)
+			          zone.PODS[myId] -= enemy + 1
+			      }
+			  }
+
+			  // Take any unowned squares
+			  for _, node := range zone.UnclaimedNeighbors() {
+			      if zone.PODS[myId] > 0 {
+			          world.AddMove(1, zone.ID, node.ID)
+			          zone.PODS[myId]--
+			      }
+			  }
+
+			  // Move random direction in own land
+			  if zone.PODS[myId] > 0 {
+			      nodes := zone.OwnedNeighbors(myId)
+			      if len(nodes) > 0 {
+			          target := nodes[rand.Int31n(int32(len(nodes)))]
+			          world.AddMove(1, zone.ID, target.ID)
+			          zone.PODS[myId]--
+			      }
+			  }*/
+		}
+
+		spawns := platinum / 20
+		if spawns > 0 {
+			SpawnRandom(spawns, myId, &world)
+			//SpawnOneContinent(spawns, 1, myId, &world)
+		}
+
+		world.Step()
+	}
+}
