@@ -109,7 +109,10 @@ type World struct {
 	Zones      []*Zone
 	Continents []*Continent
 
-	RoundNumber  int
+	RoundNumber int
+	PlayerID    int
+	Platinum    int
+
 	MoveMessage  string
 	SpawnMessage string
 }
@@ -119,6 +122,10 @@ func (w *World) AddMove(number, start, end int) {
 		w.MoveMessage = ""
 	}
 	w.MoveMessage += strconv.Itoa(number) + " " + strconv.Itoa(start) + " " + strconv.Itoa(end) + " "
+}
+
+func (w World) AvailableSpawns() int {
+	return w.Platinum / 20
 }
 
 func (w *World) AddSpawn(number, position int) {
@@ -243,15 +250,15 @@ func (w World) Path(start Zone, endTest func(*Zone) bool) []int {
 	return []int{}
 }
 
-func (w *World) SpawnRandom(spawns, player int) {
-	for i := 0; i < spawns; i++ {
-		w.AddSpawn(1, RandomZone(w.Zones).Spawnable(player).ID)
+func (w *World) SpawnRandom() {
+	for i := 0; i < w.AvailableSpawns(); i++ {
+		w.AddSpawn(1, RandomZone(w.Zones).Spawnable(w.PlayerID).ID)
 	}
 }
 
-func (w *World) SpawnOneContinent(spawns, continent, player int, world *World) {
-	for i := 0; i < spawns; i++ {
-		w.AddSpawn(1, RandomZone(w.Continents[continent].Zones).Spawnable(player).ID)
+func (w *World) SpawnOneContinent(continent int) {
+	for i := 0; i < w.AvailableSpawns(); i++ {
+		w.AddSpawn(1, RandomZone(w.Continents[continent].Zones).Spawnable(w.PlayerID).ID)
 	}
 }
 
@@ -259,13 +266,14 @@ func main() {
 	log.SetOutput(os.Stderr)
 	log.SetFlags(log.Ltime | log.Lshortfile)
 
-	var playerCount, myId, zoneCount, linkCount int
-	fmt.Scan(&playerCount, &myId, &zoneCount, &linkCount)
+	world := World{MoveMessage: "WAIT", SpawnMessage: "WAIT"}
 
-	rand.Seed(time.Now().Unix() * int64(myId))
+	var playerCount, zoneCount, linkCount int
+	fmt.Scan(&playerCount, &world.PlayerID, &zoneCount, &linkCount)
+
+	rand.Seed(time.Now().Unix() * int64(world.PlayerID))
 
 	// Setup World
-	world := World{MoveMessage: "WAIT", SpawnMessage: "WAIT"}
 	for i := 0; i < zoneCount; i++ {
 		var id, value int
 		fmt.Scan(&id, &value)
@@ -284,8 +292,7 @@ func main() {
 
 	// Handle Steps
 	for {
-		var platinum int
-		fmt.Scan(&platinum)
+		fmt.Scan(&world.Platinum)
 
 		var myUnits []*Zone
 		for i := 0; i < zoneCount; i++ {
@@ -295,7 +302,7 @@ func main() {
 			world.Zones[id].Owner = owner
 			world.Zones[id].PODS = [4]int{podsP0, podsP1, podsP2, podsP3}
 
-			if world.Zones[id].PODS[myId] > 0 {
+			if world.Zones[id].PODS[world.PlayerID] > 0 {
 				myUnits = append(myUnits, world.Zones[id])
 			}
 		}
@@ -303,7 +310,7 @@ func main() {
 		// Movement
 		for _, zone := range myUnits {
 			path := world.Path(*zone, func(z *Zone) bool {
-				if z.Platinum > 0 && z.Owner != zone.Owner {
+				if z.Platinum > 0 && z.Owner != world.PlayerID {
 					log.Println("PTarget:", z, "\n")
 					return true
 				}
@@ -311,30 +318,26 @@ func main() {
 			})
 
 			if len(path) > 0 {
-				world.AddMove(zone.PODS[myId], zone.ID, path[0])
-				zone.PODS[myId] -= zone.PODS[myId]
+				world.AddMove(zone.PODS[world.PlayerID], zone.ID, path[0])
+				zone.PODS[world.PlayerID] -= zone.PODS[world.PlayerID]
 			}
 
-			if zone.PODS[myId] > 0 {
+			if zone.PODS[world.PlayerID] > 0 {
 				path := world.Path(*zone, func(z *Zone) bool {
-					if z.Owner != myId {
+					if z.Owner != world.PlayerID {
 						log.Println("OTarget:", z, "\n")
 						return true
 					}
 					return false
 				})
 				if len(path) > 0 {
-					world.AddMove(zone.PODS[myId], zone.ID, path[0])
-					zone.PODS[myId] -= zone.PODS[myId]
+					world.AddMove(zone.PODS[world.PlayerID], zone.ID, path[0])
+					zone.PODS[world.PlayerID] -= zone.PODS[world.PlayerID]
 				}
 			}
 		}
 
-		spawns := platinum / 20
-		if spawns > 0 {
-			world.SpawnRandom(spawns, myId)
-		}
-
+		world.SpawnRandom()
 		world.Step()
 	}
 }
