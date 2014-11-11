@@ -204,7 +204,6 @@ func (w World) Path(start Zone, endTest func(*Zone) bool) []int {
 	distance[start.ID] = 0
 
 	for len(nodes) > 0 {
-		//log.Println(len(nodes), "\n")
 		smallest_id, smallest_dist := -1, 9999
 		for _, node := range nodes {
 			if distance[node.ID] < smallest_dist {
@@ -212,7 +211,6 @@ func (w World) Path(start Zone, endTest func(*Zone) bool) []int {
 				smallest_dist = distance[node.ID]
 			}
 		}
-		//log.Println(smallest_id, smallest_dist, "\n")
 
 		currentNode := nodes[smallest_id]
 		delete(nodes, currentNode.ID)
@@ -220,18 +218,6 @@ func (w World) Path(start Zone, endTest func(*Zone) bool) []int {
 		if endTest(currentNode) {
 			return path(currentNode, previous)
 		}
-
-		/*if currentNode.Platinum > 0 && currentNode.Owner != start.Owner {
-		      log.Println("Platinum Target:", currentNode, "\n")
-		      return path(currentNode, previous)
-		  }
-
-		  for i := 0; i < 4 && i != start.Owner; i++ {
-		      if currentNode.PODS[start.Owner] > currentNode.PODS[i] {
-		          log.Println("Enemy Target:", currentNode, "\n")
-		          return path(currentNode, previous)
-		      }
-		  }*/
 
 		for _, neighbor := range currentNode.Neighbors {
 			alt := distance[currentNode.ID]
@@ -247,7 +233,6 @@ func (w World) Path(start Zone, endTest func(*Zone) bool) []int {
 				alt += 3
 			}
 
-			//log.Println(neighbor.ID, alt, distance[neighbor.ID], "\n")
 			if alt < distance[neighbor.ID] {
 				distance[neighbor.ID] = alt
 				previous[neighbor.ID] = currentNode.ID
@@ -255,29 +240,18 @@ func (w World) Path(start Zone, endTest func(*Zone) bool) []int {
 		}
 	}
 
-	//log.Println(distance, "\n", previous, "\n")
-
 	return []int{}
 }
 
-func SpawnRandom(spawns, player int, world *World) {
+func (w *World) SpawnRandom(spawns, player int) {
 	for i := 0; i < spawns; i++ {
-		zone := RandomZone(world.Zones).Spawnable(player)
-		world.AddSpawn(1, zone.ID)
+		w.AddSpawn(1, RandomZone(w.Zones).Spawnable(player).ID)
 	}
 }
 
-func (w *World) SpawnContestedRandom(spawns, player int) {
+func (w *World) SpawnOneContinent(spawns, continent, player int, world *World) {
 	for i := 0; i < spawns; i++ {
-		zone := RandomZone(w.Zones).Spawnable(player)
-		w.AddSpawn(1, zone.ID)
-	}
-}
-
-func SpawnOneContinent(spawns, continent, player int, world *World) {
-	for i := 0; i < spawns; i++ {
-		zone := RandomZone(world.Continents[continent].Zones).Spawnable(player)
-		world.AddSpawn(1, zone.ID)
+		w.AddSpawn(1, RandomZone(w.Continents[continent].Zones).Spawnable(player).ID)
 	}
 }
 
@@ -354,38 +328,11 @@ func main() {
 					zone.PODS[myId] -= zone.PODS[myId]
 				}
 			}
-
-			/*for _, node := range zone.DefeatableNeighbors(myId) {
-			      enemy := node.PODS[node.Owner]
-			      if zone.PODS[myId] > enemy {
-			          world.AddMove(enemy + 1, zone.ID, node.ID)
-			          zone.PODS[myId] -= enemy + 1
-			      }
-			  }
-
-			  // Take any unowned squares
-			  for _, node := range zone.UnclaimedNeighbors() {
-			      if zone.PODS[myId] > 0 {
-			          world.AddMove(1, zone.ID, node.ID)
-			          zone.PODS[myId]--
-			      }
-			  }
-
-			  // Move random direction in own land
-			  if zone.PODS[myId] > 0 {
-			      nodes := zone.OwnedNeighbors(myId)
-			      if len(nodes) > 0 {
-			          target := nodes[rand.Int31n(int32(len(nodes)))]
-			          world.AddMove(1, zone.ID, target.ID)
-			          zone.PODS[myId]--
-			      }
-			  }*/
 		}
 
 		spawns := platinum / 20
 		if spawns > 0 {
-			SpawnRandom(spawns, myId, &world)
-			//SpawnOneContinent(spawns, 1, myId, &world)
+			world.SpawnRandom(spawns, myId)
 		}
 
 		world.Step()
