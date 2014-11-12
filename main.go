@@ -56,7 +56,10 @@ func (r RandomZone) Spawnable(player int) *Zone {
 			spawnable = append(spawnable, node)
 		}
 	}
-	return spawnable[int(rand.Int31n(int32(len(spawnable))))]
+	if len(spawnable) != 0 {
+		return spawnable[int(rand.Int31n(int32(len(spawnable))))]
+	}
+	return nil
 }
 
 type Continent struct {
@@ -96,6 +99,7 @@ func (w *World) AddSpawn(number, position int) {
 		w.SpawnMessage = ""
 	}
 
+	w.Platinum -= 20
 	w.SpawnMessage += strconv.Itoa(number) + " " + strconv.Itoa(position) + " "
 }
 
@@ -213,6 +217,30 @@ func (w World) Path(start Zone, endTest func(*Zone) bool) []int {
 func (w *World) SpawnRandom() {
 	for i := 0; i < w.AvailableSpawns(); i++ {
 		w.AddSpawn(1, RandomZone(w.Zones).Spawnable(w.PlayerID).ID)
+	}
+}
+
+func (w *World) SpawnRandomUnclaimedFirst() {
+	empty, owned := []*Zone{}, []*Zone{}
+	for _, zone := range w.Zones {
+		if zone.Owner == -1 {
+			empty = append(empty, zone)
+		}
+		if zone.Owner != -1 && zone.Owner == w.PlayerID {
+			owned = append(owned, zone)
+		}
+	}
+
+	for i := 0; i < w.AvailableSpawns(); i++ {
+		zone := RandomZone(empty).Spawnable(w.PlayerID)
+		if zone == nil {
+			break
+		}
+		w.AddSpawn(1, zone.ID)
+	}
+
+	for i := 0; i < w.AvailableSpawns(); i++ {
+		w.AddSpawn(1, RandomZone(owned).Spawnable(w.PlayerID).ID)
 	}
 }
 
