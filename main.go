@@ -253,7 +253,7 @@ func (w *World) SpawnOneContinent(continent int) {
 
 func main() {
 	log.SetOutput(os.Stderr)
-	log.SetFlags(log.Ltime | log.Lshortfile)
+	log.SetFlags(log.Lshortfile)
 
 	world := World{MoveMessage: "WAIT", SpawnMessage: "WAIT", Zones: make(map[int]*Zone), Continents: make(map[int]*Continent)}
 
