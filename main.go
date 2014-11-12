@@ -216,8 +216,14 @@ func (w World) Path(start Zone, endTest func(*Zone) bool) []int {
 }
 
 func (w *World) SpawnRandom() {
-	for i := 0; i < w.AvailableSpawns(); i++ {
+	for w.AvailableSpawns() > 0 {
 		w.AddSpawn(1, RandomZone(w.Zones).Spawnable(w.PlayerID).ID)
+	}
+}
+
+func (w *World) SpawnOneContinent(continent int) {
+	for w.AvailableSpawns() > 0 {
+		w.AddSpawn(1, RandomZone(w.Continents[continent].Zones).Spawnable(w.PlayerID).ID)
 	}
 }
 
@@ -232,22 +238,17 @@ func (w *World) SpawnRandomUnclaimedFirst() {
 		}
 	}
 
-	for i := 0; i < w.AvailableSpawns(); i++ {
+	for w.AvailableSpawns() > 0 {
 		zone := RandomZone(empty).Spawnable(w.PlayerID)
+		log.Println(len(empty), zone, "\n")
 		if zone == nil {
 			break
 		}
 		w.AddSpawn(1, zone.ID)
 	}
 
-	for i := 0; i < w.AvailableSpawns(); i++ {
+	for w.AvailableSpawns() > 0 {
 		w.AddSpawn(1, RandomZone(owned).Spawnable(w.PlayerID).ID)
-	}
-}
-
-func (w *World) SpawnOneContinent(continent int) {
-	for i := 0; i < w.AvailableSpawns(); i++ {
-		w.AddSpawn(1, RandomZone(w.Continents[continent].Zones).Spawnable(w.PlayerID).ID)
 	}
 }
 
@@ -326,7 +327,7 @@ func main() {
 			}
 		}
 
-		world.SpawnRandom()
+		world.SpawnRandomUnclaimedFirst()
 		world.Step()
 
 		log.Println("Time:", time.Now().Sub(start))
