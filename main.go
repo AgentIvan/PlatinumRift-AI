@@ -171,7 +171,7 @@ func (w *World) SetContinentBFS(continent int, zone *Zone, visited []bool) {
 	}
 }
 
-func (w World) Path(start Zone, endTest func(*Zone) bool) []int {
+func (w World) Path(start Zone, endTest func(*Zone, int) bool) []int {
 	distance := make(map[int]int)
 	previous := make(map[int]int)
 	nodes := make(map[int]*Zone)
@@ -211,7 +211,7 @@ func (w World) Path(start Zone, endTest func(*Zone) bool) []int {
 		currentNode := nodes[smallest_id]
 		delete(nodes, currentNode.ID)
 
-		if endTest(currentNode) {
+		if endTest(currentNode, distance[currentNode.ID]) {
 			return path(currentNode, previous)
 		}
 
@@ -296,6 +296,9 @@ func (w *World) SpawnBalancePODS() {
 					break
 				}
 				zone := RandomZone(w.Continents[c.ID].Zones).Spawnable(w.PlayerID)
+				if zone == nil {
+					break
+				}
 				w.AddSpawn(1, zone.ID)
 			}
 		}
@@ -350,36 +353,45 @@ func main() {
 		}
 
 		// Movement
+		target := make(map[int]bool)
 		for _, zone := range myUnits {
 			units := zone.PODS[world.PlayerID]
-
-			path := world.Path(*zone, func(z *Zone) bool {
-				if z.Platinum > 0 && z.Owner != world.PlayerID {
-					return true
-				}
-				return false
-			})
-
-			if len(path) > 0 {
-				world.AddMove(zone.PODS[world.PlayerID], zone.ID, path[0])
-				units -= zone.PODS[world.PlayerID]
-			}
-
-			if units > 0 {
-				path := world.Path(*zone, func(z *Zone) bool {
-					if z.Owner != world.PlayerID {
+			for units > 0 {
+				path := world.Path(*zone, func(z *Zone, d int) bool {
+					if !target[zone.ID] && z.Owner != world.PlayerID {
 						return true
 					}
 					return false
 				})
-				if len(path) > 0 {
-					world.AddMove(zone.PODS[world.PlayerID], zone.ID, path[0])
-					units -= zone.PODS[world.PlayerID]
+
+				if len(path) == 0 {
+					break
 				}
+				target[path[0]] = true
+
+				world.AddMove(1, zone.ID, path[0])
+				units -= 1
+			}
+
+			for units > 0 {
+				path := world.Path(*zone, func(z *Zone, _ int) bool {
+					if !target[zone.ID] && z.Platinum > 0 && z.Owner != world.PlayerID {
+						return true
+					}
+					return false
+				})
+
+				if len(path) == 0 {
+					break
+				}
+				target[path[0]] = true
+
+				world.AddMove(1, zone.ID, path[0])
+				units -= 1
 			}
 		}
 
-		world.SpawnBalancePODS()
+		world.SpawnRandom()
 		world.Step()
 
 		log.Println("Time:", time.Now().Sub(start))
