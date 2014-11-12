@@ -25,7 +25,7 @@ func (z Zone) IsSpawnable(player int) bool {
 	return z.Owner == -1 || z.Owner == player
 }
 
-type RandomZone []*Zone
+type RandomZone map[int]*Zone
 
 func (r RandomZone) PlayerPOD(player int) *Zone {
 	owned := []*Zone{}
@@ -64,7 +64,7 @@ func (r RandomZone) Spawnable(player int) *Zone {
 
 type Continent struct {
 	ID    int
-	Zones []*Zone
+	Zones map[int]*Zone
 }
 
 func (c Continent) Size() int {
@@ -72,8 +72,8 @@ func (c Continent) Size() int {
 }
 
 type World struct {
-	Zones      []*Zone
-	Continents []*Continent
+	Zones      map[int]*Zone
+	Continents map[int]*Continent
 
 	RoundNumber int
 	PlayerID    int
@@ -124,13 +124,14 @@ func (w *World) CalculateContinents() {
 	}
 
 	// Setup Continents
+	w.Continents = make(map[int]*Continent)
 	for i := 0; i < continent; i++ {
-		w.Continents = append(w.Continents, &Continent{ID: i})
+		w.Continents[i] = &Continent{ID: i, Zones: make(map[int]*Zone)}
 	}
 
 	// Fill Continents
 	for i := 0; i < len(w.Zones); i++ {
-		w.Continents[w.Zones[i].Continent].Zones = append(w.Continents[w.Zones[i].Continent].Zones, w.Zones[i])
+		w.Continents[w.Zones[i].Continent].Zones[w.Zones[i].ID] = w.Zones[i]
 	}
 }
 
@@ -221,13 +222,13 @@ func (w *World) SpawnRandom() {
 }
 
 func (w *World) SpawnRandomUnclaimedFirst() {
-	empty, owned := []*Zone{}, []*Zone{}
+	empty, owned := make(map[int]*Zone), make(map[int]*Zone)
 	for _, zone := range w.Zones {
 		if zone.Owner == -1 {
-			empty = append(empty, zone)
+			empty[zone.ID] = zone
 		}
 		if zone.Owner != -1 && zone.Owner == w.PlayerID {
-			owned = append(owned, zone)
+			owned[zone.ID] = zone
 		}
 	}
 
@@ -254,7 +255,7 @@ func main() {
 	log.SetOutput(os.Stderr)
 	log.SetFlags(log.Ltime | log.Lshortfile)
 
-	world := World{MoveMessage: "WAIT", SpawnMessage: "WAIT"}
+	world := World{MoveMessage: "WAIT", SpawnMessage: "WAIT", Zones: make(map[int]*Zone), Continents: make(map[int]*Continent)}
 
 	var playerCount, zoneCount, linkCount int
 	fmt.Scan(&playerCount, &world.PlayerID, &zoneCount, &linkCount)
@@ -266,7 +267,7 @@ func main() {
 		var id, value int
 		fmt.Scan(&id, &value)
 
-		world.Zones = append(world.Zones, &Zone{ID: id, Continent: -1, Platinum: value})
+		world.Zones[id] = &Zone{ID: id, Continent: -1, Platinum: value}
 	}
 
 	for i := 0; i < linkCount; i++ {
@@ -301,7 +302,6 @@ func main() {
 		for _, zone := range myUnits {
 			path := world.Path(*zone, func(z *Zone) bool {
 				if z.Platinum > 0 && z.Owner != world.PlayerID {
-					log.Println("PTarget:", z, "\n")
 					return true
 				}
 				return false
@@ -315,7 +315,6 @@ func main() {
 			if zone.PODS[world.PlayerID] > 0 {
 				path := world.Path(*zone, func(z *Zone) bool {
 					if z.Owner != world.PlayerID {
-						log.Println("OTarget:", z, "\n")
 						return true
 					}
 					return false
