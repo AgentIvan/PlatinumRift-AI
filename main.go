@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"sort"
@@ -192,7 +193,7 @@ func (w World) Path(start Zone, endTest func(*Zone) bool) []int {
 	}
 
 	for _, node := range w.Continents[start.Continent].Zones {
-		distance[node.ID] = len(w.Continents[start.Continent].Zones)
+		distance[node.ID] = math.MaxInt32
 		previous[node.ID] = -1
 		nodes[node.ID] = node
 	}
