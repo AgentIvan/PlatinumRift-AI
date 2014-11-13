@@ -14,8 +14,10 @@ import (
 type Zone struct {
 	ID       int
 	Owner    int
-	PODS     [4]int
 	Platinum int
+
+	PODS     [4]int
+	UsedPODS int
 
 	Continent int
 	Neighbors []*Zone
@@ -119,6 +121,11 @@ type World struct {
 	Zones      map[int]*Zone
 	Continents map[int]*Continent
 
+	PlatinumZones []*Zone
+
+	PlayerUnits []*Zone
+	EnemyUnits  []*Zone
+
 	RoundNumber int
 	PlayerID    int
 	Platinum    int
@@ -131,6 +138,7 @@ func (w *World) AddMove(number, start, end int) {
 	if w.MoveMessage == "WAIT" {
 		w.MoveMessage = ""
 	}
+	w.Zones[start].UsedPODS += number
 	w.MoveMessage += strconv.Itoa(number) + " " + strconv.Itoa(start) + " " + strconv.Itoa(end) + " "
 }
 
@@ -191,6 +199,76 @@ func (w *World) SetContinentBFS(continent int, zone *Zone, visited []bool) {
 	}
 }
 
+func (w *World) Initialize() {
+	var playerCount, zoneCount, linkCount int
+	fmt.Scan(&playerCount, &w.PlayerID, &zoneCount, &linkCount)
+
+	w.MoveMessage = "WAIT"
+	w.SpawnMessage = "WAIT"
+
+	w.Zones = make(map[int]*Zone)
+	w.Continents = make(map[int]*Continent)
+
+	rand.Seed(time.Now().Unix() * int64(w.PlayerID))
+
+	for i := 0; i < zoneCount; i++ {
+		zone := Zone{Continent: -1}
+		fmt.Scan(&zone.ID, &zone.Platinum)
+
+		w.Zones[zone.ID] = &zone
+		if zone.Platinum > 0 {
+			w.PlatinumZones = append(w.PlatinumZones, &zone)
+		}
+	}
+
+	for i := 0; i < linkCount; i++ {
+		var zone1, zone2 int
+		fmt.Scan(&zone1, &zone2)
+
+		w.Zones[zone1].Neighbors = append(w.Zones[zone1].Neighbors, w.Zones[zone2])
+		w.Zones[zone2].Neighbors = append(w.Zones[zone2].Neighbors, w.Zones[zone1])
+	}
+
+	w.CalculateContinents()
+}
+
+func (w *World) Update() {
+	// Update Input
+	fmt.Scan(&w.Platinum)
+	for i := 0; i < len(w.Zones); i++ {
+		var id int
+		fmt.Scan(&id)
+		fmt.Scan(&w.Zones[id].Owner, &w.Zones[id].PODS[0], &w.Zones[id].PODS[1], &w.Zones[id].PODS[2], &w.Zones[id].PODS[3])
+	}
+
+	// Clear Transitory Data
+	w.PlayerUnits = []*Zone{}
+	w.EnemyUnits = []*Zone{}
+
+	// Update Data
+	for _, zone := range w.Zones {
+		zone.UsedPODS = 0
+
+		for i := 0; i < 4; i++ {
+			if i == w.PlayerID && zone.PODS[i] > 0 {
+				w.PlayerUnits = append(w.PlayerUnits, zone)
+			}
+
+			if i != w.PlayerID && zone.PODS[i] > 0 {
+				w.EnemyUnits = append(w.EnemyUnits, zone)
+			}
+		}
+		if zone.PODS[w.PlayerID] > 0 {
+			w.PlayerUnits = append(w.PlayerUnits, zone)
+			w.UpdatePathing(zone)
+		}
+
+		if zone.PODS[w.PlayerID] > 0 {
+			w.PlayerUnits = append(w.PlayerUnits, zone)
+		}
+	}
+}
+
 func (w *World) UpdatePathing(z *Zone) {
 	if z.Distance == nil {
 		z.Distance = make(map[int]int)
@@ -239,74 +317,6 @@ func (w *World) UpdatePathing(z *Zone) {
 			}
 		}
 	}
-}
-
-func (w World) Path(start Zone, endTest func(*Zone, int) bool) []int {
-	distance := make(map[int]int)
-	previous := make(map[int]int)
-	nodes := make(map[int]*Zone)
-
-	path := func(target *Zone, previous map[int]int) []int {
-		path := []int{}
-		if target != nil {
-			u := target.ID
-			for {
-				if previous[u] == -1 {
-					break
-				}
-
-				path = append([]int{u}, path...)
-				u = previous[u]
-			}
-		}
-		return path
-	}
-
-	for _, node := range w.Continents[start.Continent].Zones {
-		distance[node.ID] = math.MaxInt32
-		previous[node.ID] = -1
-		nodes[node.ID] = node
-	}
-	distance[start.ID] = 0
-
-	for len(nodes) > 0 {
-		smallest_id, smallest_dist := -1, 9999
-		for _, node := range nodes {
-			if distance[node.ID] < smallest_dist {
-				smallest_id = node.ID
-				smallest_dist = distance[node.ID]
-			}
-		}
-
-		currentNode := nodes[smallest_id]
-		delete(nodes, currentNode.ID)
-
-		if endTest(currentNode, distance[currentNode.ID]) {
-			return path(currentNode, previous)
-		}
-
-		for _, neighbor := range currentNode.Neighbors {
-			alt := distance[currentNode.ID]
-
-			// Favor enemy zones over unclaimed over owned
-			if neighbor.Owner != start.Owner {
-				if neighbor.Owner != -1 {
-					alt += 1
-				} else {
-					alt += 2
-				}
-			} else {
-				alt += 3
-			}
-
-			if alt < distance[neighbor.ID] {
-				distance[neighbor.ID] = alt
-				previous[neighbor.ID] = currentNode.ID
-			}
-		}
-	}
-
-	return []int{}
 }
 
 func (w *World) SpawnRandom() {
@@ -379,62 +389,19 @@ func main() {
 	log.SetOutput(os.Stderr)
 	log.SetFlags(log.Lshortfile)
 
-	world := World{MoveMessage: "WAIT", SpawnMessage: "WAIT", Zones: make(map[int]*Zone), Continents: make(map[int]*Continent)}
-
-	var playerCount, zoneCount, linkCount int
-	fmt.Scan(&playerCount, &world.PlayerID, &zoneCount, &linkCount)
-
-	rand.Seed(time.Now().Unix() * int64(world.PlayerID))
-
-	platinumZones := []*Zone{}
-	// Setup World
-	for i := 0; i < zoneCount; i++ {
-		var id, value int
-		fmt.Scan(&id, &value)
-
-		world.Zones[id] = &Zone{ID: id, Continent: -1, Platinum: value}
-		if value > 0 {
-			platinumZones = append(platinumZones, world.Zones[id])
-		}
-	}
-
-	for i := 0; i < linkCount; i++ {
-		var zone1, zone2 int
-		fmt.Scan(&zone1, &zone2)
-
-		world.Zones[zone1].Neighbors = append(world.Zones[zone1].Neighbors, world.Zones[zone2])
-		world.Zones[zone2].Neighbors = append(world.Zones[zone2].Neighbors, world.Zones[zone1])
-	}
-	world.CalculateContinents()
+	var world World
+	world.Initialize()
 
 	// Handle Steps
 	for {
 		start := time.Now()
-		fmt.Scan(&world.Platinum)
-
-		// Update World
-		var myUnits []*Zone
-		for i := 0; i < zoneCount; i++ {
-			var id, owner, podsP0, podsP1, podsP2, podsP3 int
-			fmt.Scan(&id, &owner, &podsP0, &podsP1, &podsP2, &podsP3)
-
-			world.Zones[id].Owner = owner
-			world.Zones[id].PODS = [4]int{podsP0, podsP1, podsP2, podsP3}
-
-			if world.Zones[id].PODS[world.PlayerID] > 0 {
-				myUnits = append(myUnits, world.Zones[id])
-			}
-		}
-
-		for _, zone := range myUnits {
-			world.UpdatePathing(zone)
-		}
+		world.Update()
 
 		// Calculate Movement
-		for _, pZone := range platinumZones {
+		for _, pZone := range world.PlatinumZones {
 			shortest, index := math.MaxInt32, -1
-			for _, zone := range myUnits {
-				if zone.Continent == pZone.Continent {
+			for _, zone := range world.PlayerUnits {
+				if zone.UsedPODS != zone.PODS[world.PlayerID] && zone.Continent == pZone.Continent {
 					if dist, ok := zone.Distance[pZone.ID]; ok {
 						if dist < shortest {
 							shortest = dist
