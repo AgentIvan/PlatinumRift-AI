@@ -19,6 +19,10 @@ type Zone struct {
 
 	Continent int
 	Neighbors []*Zone
+
+	// Pathing Variables
+	Distance map[int]int
+	Previous map[int]int
 }
 
 func (z Zone) String() string {
@@ -27,6 +31,22 @@ func (z Zone) String() string {
 
 func (z Zone) IsSpawnable(player int) bool {
 	return z.Owner == -1 || z.Owner == player
+}
+
+func (z *Zone) PathTo(target *Zone) []int {
+	path := []int{}
+	if target != nil {
+		u := target.ID
+		for {
+			if z.Previous[u] == -1 {
+				break
+			}
+
+			path = append([]int{u}, path...)
+			u = z.Previous[u]
+		}
+	}
+	return path
 }
 
 type RandomZone map[int]*Zone
@@ -168,6 +188,52 @@ func (w *World) SetContinentBFS(continent int, zone *Zone, visited []bool) {
 	zone.Continent = continent
 	for _, neighbor := range zone.Neighbors {
 		w.SetContinentBFS(continent, neighbor, visited)
+	}
+}
+
+func (w *World) UpdatePathing(z *Zone) {
+	z.Distance = make(map[int]int)
+	z.Previous = make(map[int]int)
+
+	nodes := make(map[int]*Zone)
+	for _, node := range w.Continents[z.Continent].Zones {
+		z.Distance[node.ID] = math.MaxInt32
+		z.Previous[node.ID] = -1
+		nodes[node.ID] = node
+	}
+	z.Distance[z.ID] = 0
+
+	for len(nodes) > 0 {
+		smallest_id, smallest_dist := -1, math.MaxInt32
+		for _, node := range nodes {
+			if z.Distance[node.ID] < smallest_dist {
+				smallest_id = node.ID
+				smallest_dist = z.Distance[node.ID]
+			}
+		}
+
+		currentNode := nodes[smallest_id]
+		delete(nodes, currentNode.ID)
+
+		for _, neighbor := range currentNode.Neighbors {
+			alt := z.Distance[currentNode.ID]
+
+			// Favor enemy zones over unclaimed over owned
+			if neighbor.Owner != z.Owner {
+				if neighbor.Owner != -1 {
+					alt += 1
+				} else {
+					alt += 2
+				}
+			} else {
+				alt += 3
+			}
+
+			if alt < z.Distance[neighbor.ID] {
+				z.Distance[neighbor.ID] = alt
+				z.Previous[neighbor.ID] = currentNode.ID
+			}
+		}
 	}
 }
 
@@ -336,7 +402,6 @@ func main() {
 	// Handle Steps
 	for {
 		start := time.Now()
-
 		fmt.Scan(&world.Platinum)
 
 		var myUnits []*Zone
@@ -350,6 +415,10 @@ func main() {
 			if world.Zones[id].PODS[world.PlayerID] > 0 {
 				myUnits = append(myUnits, world.Zones[id])
 			}
+		}
+
+		for _, zone := range myUnits {
+			world.UpdatePathing(zone)
 		}
 
 		// Movement
