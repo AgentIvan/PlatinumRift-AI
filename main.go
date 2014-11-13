@@ -121,7 +121,10 @@ type World struct {
 	Zones      map[int]*Zone
 	Continents map[int]*Continent
 
-	PlatinumZones []*Zone
+	PlatinumZones  []*Zone
+	FriendlyZones  []*Zone
+	EnemyZones     []*Zone
+	UnclaimedZones []*Zone
 
 	PlayerUnits []*Zone
 	EnemyUnits  []*Zone
@@ -242,6 +245,11 @@ func (w *World) Update() {
 	}
 
 	// Clear Transitory Data
+	w.PlatinumZones = []*Zone{}
+	w.FriendlyZones = []*Zone{}
+	w.EnemyZones = []*Zone{}
+	w.UnclaimedZones = []*Zone{}
+
 	w.PlayerUnits = []*Zone{}
 	w.EnemyUnits = []*Zone{}
 
@@ -252,19 +260,21 @@ func (w *World) Update() {
 		for i := 0; i < 4; i++ {
 			if i == w.PlayerID && zone.PODS[i] > 0 {
 				w.PlayerUnits = append(w.PlayerUnits, zone)
+				w.UpdatePathing(zone)
 			}
 
 			if i != w.PlayerID && zone.PODS[i] > 0 {
 				w.EnemyUnits = append(w.EnemyUnits, zone)
 			}
 		}
-		if zone.PODS[w.PlayerID] > 0 {
-			w.PlayerUnits = append(w.PlayerUnits, zone)
-			w.UpdatePathing(zone)
-		}
 
-		if zone.PODS[w.PlayerID] > 0 {
-			w.PlayerUnits = append(w.PlayerUnits, zone)
+		switch zone.Owner {
+		case -1:
+			w.UnclaimedZones = append(w.UnclaimedZones, zone)
+		case w.PlayerID:
+			w.FriendlyZones = append(w.FriendlyZones, zone)
+		default:
+			w.EnemyZones = append(w.EnemyZones, zone)
 		}
 	}
 }
