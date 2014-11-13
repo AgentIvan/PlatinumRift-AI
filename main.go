@@ -35,6 +35,24 @@ func (z Zone) IsSpawnable(player int) bool {
 	return z.Owner == -1 || z.Owner == player
 }
 
+func (z *Zone) RemainingPODS(player int) int {
+	return z.PODS[player] - z.UsedPODS
+}
+
+func (z *Zone) Friendlies(player int) int {
+	return z.PODS[player]
+}
+
+func (z *Zone) Enemies(player int) int {
+	sum := 0
+	for i := 0; i < 4; i++ {
+		if i != player {
+			sum += z.PODS[player]
+		}
+	}
+	return sum
+}
+
 func (z *Zone) PathTo(target *Zone) []int {
 	path := []int{}
 	if target != nil {
@@ -50,6 +68,12 @@ func (z *Zone) PathTo(target *Zone) []int {
 	}
 	return path
 }
+
+type ByPlatinum []*Zone
+
+func (b ByPlatinum) Len() int           { return len(b) }
+func (b ByPlatinum) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b ByPlatinum) Less(i, j int) bool { return b[i].Platinum > b[j].Platinum }
 
 type RandomZone map[int]*Zone
 
@@ -223,6 +247,7 @@ func (w *World) Initialize() {
 			w.PlatinumZones = append(w.PlatinumZones, &zone)
 		}
 	}
+	sort.Sort(ByPlatinum(w.PlatinumZones))
 
 	for i := 0; i < linkCount; i++ {
 		var zone1, zone2 int
@@ -340,6 +365,48 @@ func (w *World) SpawnOneContinent(continent int) {
 	}
 }
 
+func (w *World) SpawnNearPlatinum() {
+	nearby := make(map[int]*Zone)
+	for _, zone := range w.PlatinumZones {
+		if zone.Owner == -1 || zone.Owner == w.PlayerID {
+			nearby[zone.ID] = zone
+		} else {
+			for _, neighbor := range zone.Neighbors {
+				if neighbor.Owner == -1 || neighbor.Owner == w.PlayerID {
+					nearby[zone.ID] = zone
+				}
+			}
+		}
+	}
+
+	for w.AvailableSpawns() > 0 {
+		zone := RandomZone(nearby).Spawnable(w.PlayerID)
+		if zone == nil {
+			break
+		}
+		w.AddSpawn(1, zone.ID)
+	}
+}
+
+func (w *World) SpawnNearEnemies() {
+	nearby := make(map[int]*Zone)
+	for _, zone := range w.EnemyZones {
+		for _, neighbor := range zone.Neighbors {
+			if neighbor.Owner == -1 || neighbor.Owner == w.PlayerID {
+				nearby[zone.ID] = zone
+			}
+		}
+	}
+
+	for w.AvailableSpawns() > 0 {
+		zone := RandomZone(nearby).Spawnable(w.PlayerID)
+		if zone == nil {
+			break
+		}
+		w.AddSpawn(1, zone.ID)
+	}
+}
+
 func (w *World) SpawnRandomUnclaimedFirst() {
 	empty, owned := make(map[int]*Zone), make(map[int]*Zone)
 	for _, zone := range w.Zones {
@@ -368,7 +435,7 @@ type BySize []*Continent
 
 func (b BySize) Len() int           { return len(b) }
 func (b BySize) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
-func (b BySize) Less(i, j int) bool { return b[i].Size() < b[j].Size() }
+func (b BySize) Less(i, j int) bool { return b[i].Size() > b[j].Size() }
 
 func (w *World) SpawnBalancePODS() {
 	continents := []*Continent{}
@@ -394,6 +461,45 @@ func (w *World) SpawnBalancePODS() {
 	}
 }
 
+func (w *World) SpawnNearPlatinumBalancedPODS() {
+	continents := []*Continent{}
+	for _, continent := range w.Continents {
+		continents = append(continents, continent)
+	}
+	sort.Sort(BySize(continents))
+
+	for _, c := range continents {
+		nearby := make(map[int]*Zone)
+		for _, zone := range w.PlatinumZones {
+			if zone.Continent == c.ID {
+				if zone.Owner == -1 || zone.Owner == w.PlayerID {
+					nearby[zone.ID] = zone
+				} else {
+					for _, neighbor := range zone.Neighbors {
+						if neighbor.Owner == -1 || neighbor.Owner == w.PlayerID {
+							nearby[zone.ID] = zone
+						}
+					}
+				}
+			}
+		}
+
+		diff := (w.Continents[c.ID].EnemyCount(w.PlayerID) - w.Continents[c.ID].FriendlyCount(w.PlayerID)) + 1
+		if diff > 0 {
+			for i := 0; i < diff; i++ {
+				if w.AvailableSpawns() == 0 {
+					break
+				}
+				zone := RandomZone(nearby).Spawnable(w.PlayerID)
+				if zone == nil {
+					break
+				}
+				w.AddSpawn(1, zone.ID)
+			}
+		}
+	}
+}
+
 func main() {
 	log.SetOutput(os.Stderr)
 	log.SetFlags(log.Lshortfile)
@@ -408,6 +514,48 @@ func main() {
 
 		// Calculate Movement
 		for _, pZone := range world.PlatinumZones {
+			if pZone.Owner != world.PlayerID {
+				shortest, index := math.MaxInt32, -1
+				for _, zone := range world.PlayerUnits {
+					if zone.UsedPODS != zone.PODS[world.PlayerID] && zone.Continent == pZone.Continent {
+						if dist, ok := zone.Distance[pZone.ID]; ok {
+							if dist < shortest {
+								shortest = dist
+								index = zone.ID
+							}
+						}
+					}
+				}
+
+				if index != -1 {
+					if path := world.Zones[index].PathTo(pZone); len(path) > 0 {
+						world.AddMove(world.Zones[index].PODS[world.PlayerID], world.Zones[index].ID, path[0])
+					}
+				}
+			}
+		}
+
+		for _, pZone := range world.UnclaimedZones {
+			shortest, index := math.MaxInt32, -1
+			for _, zone := range world.PlayerUnits {
+				if zone.UsedPODS != zone.PODS[world.PlayerID] && zone.Continent == pZone.Continent {
+					if dist, ok := zone.Distance[pZone.ID]; ok {
+						if dist < shortest {
+							shortest = dist
+							index = zone.ID
+						}
+					}
+				}
+			}
+
+			if index != -1 {
+				if path := world.Zones[index].PathTo(pZone); len(path) > 0 {
+					world.AddMove(world.Zones[index].PODS[world.PlayerID], world.Zones[index].ID, path[0])
+				}
+			}
+		}
+
+		for _, pZone := range world.EnemyZones {
 			shortest, index := math.MaxInt32, -1
 			for _, zone := range world.PlayerUnits {
 				if zone.UsedPODS != zone.PODS[world.PlayerID] && zone.Continent == pZone.Continent {
@@ -428,6 +576,7 @@ func main() {
 		}
 
 		// Calculate Spawns
+		world.SpawnNearPlatinumBalancedPODS()
 		world.SpawnRandom()
 
 		// Initiate Step
