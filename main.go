@@ -192,8 +192,12 @@ func (w *World) SetContinentBFS(continent int, zone *Zone, visited []bool) {
 }
 
 func (w *World) UpdatePathing(z *Zone) {
-	z.Distance = make(map[int]int)
-	z.Previous = make(map[int]int)
+	if z.Distance == nil {
+		z.Distance = make(map[int]int)
+	}
+	if z.Previous == nil {
+		z.Previous = make(map[int]int)
+	}
 
 	nodes := make(map[int]*Zone)
 	for _, node := range w.Continents[z.Continent].Zones {
@@ -382,12 +386,16 @@ func main() {
 
 	rand.Seed(time.Now().Unix() * int64(world.PlayerID))
 
+	platinumZones := []*Zone{}
 	// Setup World
 	for i := 0; i < zoneCount; i++ {
 		var id, value int
 		fmt.Scan(&id, &value)
 
 		world.Zones[id] = &Zone{ID: id, Continent: -1, Platinum: value}
+		if value > 0 {
+			platinumZones = append(platinumZones, world.Zones[id])
+		}
 	}
 
 	for i := 0; i < linkCount; i++ {
@@ -404,6 +412,7 @@ func main() {
 		start := time.Now()
 		fmt.Scan(&world.Platinum)
 
+		// Update World
 		var myUnits []*Zone
 		for i := 0; i < zoneCount; i++ {
 			var id, owner, podsP0, podsP1, podsP2, podsP3 int
@@ -421,46 +430,31 @@ func main() {
 			world.UpdatePathing(zone)
 		}
 
-		// Movement
-		target := make(map[int]bool)
-		for _, zone := range myUnits {
-			units := zone.PODS[world.PlayerID]
-			for units > 0 {
-				path := world.Path(*zone, func(z *Zone, d int) bool {
-					if !target[zone.ID] && z.Owner != world.PlayerID {
-						return true
+		// Calculate Movement
+		for _, pZone := range platinumZones {
+			shortest, index := math.MaxInt32, -1
+			for _, zone := range myUnits {
+				if zone.Continent == pZone.Continent {
+					if dist, ok := zone.Distance[pZone.ID]; ok {
+						if dist < shortest {
+							shortest = dist
+							index = zone.ID
+						}
 					}
-					return false
-				})
-
-				if len(path) == 0 {
-					break
 				}
-				target[path[0]] = true
-
-				world.AddMove(1, zone.ID, path[0])
-				units -= 1
 			}
 
-			for units > 0 {
-				path := world.Path(*zone, func(z *Zone, _ int) bool {
-					if !target[zone.ID] && z.Platinum > 0 && z.Owner != world.PlayerID {
-						return true
-					}
-					return false
-				})
-
-				if len(path) == 0 {
-					break
+			if index != -1 {
+				if path := world.Zones[index].PathTo(pZone); len(path) > 0 {
+					world.AddMove(world.Zones[index].PODS[world.PlayerID], world.Zones[index].ID, path[0])
 				}
-				target[path[0]] = true
-
-				world.AddMove(1, zone.ID, path[0])
-				units -= 1
 			}
 		}
 
+		// Calculate Spawns
 		world.SpawnRandom()
+
+		// Initiate Step
 		world.Step()
 
 		log.Println("Time:", time.Now().Sub(start))
