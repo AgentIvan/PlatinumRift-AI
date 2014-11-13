@@ -245,7 +245,6 @@ func (w *World) Update() {
 	}
 
 	// Clear Transitory Data
-	w.PlatinumZones = []*Zone{}
 	w.FriendlyZones = []*Zone{}
 	w.EnemyZones = []*Zone{}
 	w.UnclaimedZones = []*Zone{}
@@ -258,13 +257,13 @@ func (w *World) Update() {
 		zone.UsedPODS = 0
 
 		for i := 0; i < 4; i++ {
-			if i == w.PlayerID && zone.PODS[i] > 0 {
-				w.PlayerUnits = append(w.PlayerUnits, zone)
-				w.UpdatePathing(zone)
-			}
-
-			if i != w.PlayerID && zone.PODS[i] > 0 {
-				w.EnemyUnits = append(w.EnemyUnits, zone)
+			if zone.PODS[i] > 0 {
+				if i == w.PlayerID {
+					w.PlayerUnits = append(w.PlayerUnits, zone)
+					w.UpdatePathing(zone)
+				} else {
+					w.EnemyUnits = append(w.EnemyUnits, zone)
+				}
 			}
 		}
 
