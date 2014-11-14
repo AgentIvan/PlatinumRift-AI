@@ -546,10 +546,7 @@ func main() {
 		for _, pZone := range world.PlatinumZones {
 			if pZone.Owner != world.PlayerID {
 				result := ClosestZone(world.PlayerUnits).Find(pZone, func(src *Zone, target *Zone) bool {
-					if src.UsedPODS != src.PODS[world.PlayerID] {
-						return true
-					}
-					return false
+					return src.UsedPODS != src.PODS[world.PlayerID]
 				})
 
 				if result != nil {
