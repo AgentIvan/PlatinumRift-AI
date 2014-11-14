@@ -69,6 +69,36 @@ func (z *Zone) PathTo(target *Zone) []int {
 	return path
 }
 
+type ClosestZone []*Zone
+
+func (c ClosestZone) Find(z *Zone, predicate func(*Zone, *Zone) bool) *Zone {
+	if len(c) == 0 {
+		return nil
+	}
+
+	shortest, index := math.MaxInt32, -1
+	for idx, zone := range c {
+		if zone.Continent == z.Continent {
+			if predicate != nil && !predicate(zone, z) {
+				continue
+			}
+
+			if dist, ok := zone.Distance[z.ID]; ok {
+				if dist < shortest {
+					shortest = dist
+					index = idx
+				}
+			}
+		}
+	}
+
+	if index != -1 {
+		return c[index]
+	}
+
+	return nil
+}
+
 type ByPlatinum []*Zone
 
 func (b ByPlatinum) Len() int           { return len(b) }
@@ -515,68 +545,22 @@ func main() {
 		// Calculate Movement
 		for _, pZone := range world.PlatinumZones {
 			if pZone.Owner != world.PlayerID {
-				shortest, index := math.MaxInt32, -1
-				for _, zone := range world.PlayerUnits {
-					if zone.UsedPODS != zone.PODS[world.PlayerID] && zone.Continent == pZone.Continent {
-						if dist, ok := zone.Distance[pZone.ID]; ok {
-							if dist < shortest {
-								shortest = dist
-								index = zone.ID
-							}
-						}
+				result := ClosestZone(world.PlayerUnits).Find(pZone, func(src *Zone, target *Zone) bool {
+					if src.UsedPODS != src.PODS[world.PlayerID] {
+						return true
 					}
-				}
+					return false
+				})
 
-				if index != -1 {
-					if path := world.Zones[index].PathTo(pZone); len(path) > 0 {
-						world.AddMove(world.Zones[index].PODS[world.PlayerID], world.Zones[index].ID, path[0])
+				if result != nil {
+					if path := result.PathTo(pZone); len(path) > 0 {
+						world.AddMove(result.PODS[world.PlayerID], result.ID, path[0])
 					}
-				}
-			}
-		}
-
-		for _, pZone := range world.UnclaimedZones {
-			shortest, index := math.MaxInt32, -1
-			for _, zone := range world.PlayerUnits {
-				if zone.UsedPODS != zone.PODS[world.PlayerID] && zone.Continent == pZone.Continent {
-					if dist, ok := zone.Distance[pZone.ID]; ok {
-						if dist < shortest {
-							shortest = dist
-							index = zone.ID
-						}
-					}
-				}
-			}
-
-			if index != -1 {
-				if path := world.Zones[index].PathTo(pZone); len(path) > 0 {
-					world.AddMove(world.Zones[index].PODS[world.PlayerID], world.Zones[index].ID, path[0])
-				}
-			}
-		}
-
-		for _, pZone := range world.EnemyZones {
-			shortest, index := math.MaxInt32, -1
-			for _, zone := range world.PlayerUnits {
-				if zone.UsedPODS != zone.PODS[world.PlayerID] && zone.Continent == pZone.Continent {
-					if dist, ok := zone.Distance[pZone.ID]; ok {
-						if dist < shortest {
-							shortest = dist
-							index = zone.ID
-						}
-					}
-				}
-			}
-
-			if index != -1 {
-				if path := world.Zones[index].PathTo(pZone); len(path) > 0 {
-					world.AddMove(world.Zones[index].PODS[world.PlayerID], world.Zones[index].ID, path[0])
 				}
 			}
 		}
 
 		// Calculate Spawns
-		world.SpawnNearPlatinumBalancedPODS()
 		world.SpawnRandom()
 
 		// Initiate Step
